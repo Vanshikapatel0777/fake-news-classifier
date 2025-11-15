@@ -2,45 +2,39 @@ import streamlit as st
 import joblib
 import re
 import nltk
-import os
+from nltk.corpus import stopwords # Import here for type hints
 
-# --- NLTK Setup: Download Stopwords Once (Robust Fix) ---
-# This block ensures 'stopwords' are downloaded and loaded upon app start.
-try:
-    if not nltk.find('corpora/stopwords'):
-        # Attempt to download the resource if it's missing (quiet=True prevents spamming logs)
+# --- NLTK Setup: Use st.cache_resource to download data once ---
+@st.cache_resource
+def download_nltk_data():
+    """Ensures NLTK stopwords are downloaded once in the cloud environment."""
+    try:
         nltk.download('stopwords', quiet=True)
-    from nltk.corpus import stopwords
-    STOP_WORDS = set(stopwords.words('english'))
-    NLTK_LOADED = True
-except Exception:
-    # Fallback if NLTK or stopwords loading fails (STOP_WORDS will be empty)
-    STOP_WORDS = set()
-    NLTK_LOADED = False
-    
+        return True, set(stopwords.words('english'))
+    except Exception as e:
+        st.error(f"Failed to download NLTK data: {e}")
+        return False, set()
+
+# Perform the download and get stopwords
+NLTK_LOADED, STOP_WORDS = download_nltk_data()
+
 # --- Constants ---
 MODEL_FILE = 'pac_model.pkl'
 VECTORIZER_FILE = 'tfidf_vectorizer.pkl'
 
-# --- Utility Functions (Must match the training script!) ---
+# --- Utility Functions ---
 
 def clean_text(text):
-    """
-    Cleans the input text using the same steps applied during model training.
-    """
-    # Convert to lowercase and ensure it's a string
+    """Cleans the input text using the same steps applied during model training."""
     text = str(text).lower()
-    # Remove special characters/numbers
     text = re.sub(r'[^a-z\s]', '', text)
-    # Remove stop words (uses the globally defined STOP_WORDS set)
+    # Uses the globally defined STOP_WORDS set
     text = ' '.join([word for word in text.split() if word not in STOP_WORDS])
     return text
 
 @st.cache_resource
 def load_artifacts():
-    """
-    Loads the trained model and vectorizer only once, using Streamlit's cache.
-    """
+    """Loads the trained model and vectorizer only once."""
     try:
         pac = joblib.load(MODEL_FILE)
         tfidf_vectorizer = joblib.load(VECTORIZER_FILE)
@@ -48,9 +42,7 @@ def load_artifacts():
     except FileNotFoundError:
         error_message = (
             f"**Error: Model files not found!** "
-            f"Please ensure you have placed the following files in the same directory as `app.py`:\n"
-            f"- `{MODEL_FILE}` (PassiveAggressiveClassifier)\n"
-            f"- `{VECTORIZER_FILE}` (TfidfVectorizer)\n"
+            f"Ensure `{MODEL_FILE}` and `{VECTORIZER_FILE}` are uploaded to GitHub."
         )
         return None, None, error_message
     except Exception as e:
@@ -75,13 +67,13 @@ def main():
     if not NLTK_LOADED:
         st.warning(
             "⚠️ **Warning:** NLTK stopwords failed to load. "
-            "The model will classify the text, but the cleaning step will be suboptimal."
+            "The text cleaning step is suboptimal."
         )
         
     # --- Error Handling for Model Loading ---
     if load_error:
         st.error(load_error)
-        st.stop() # Stop the app execution if models didn't load
+        st.stop() 
 
     # --- Prediction Function ---
     def predict_fake_news(news_text, model, vectorizer):
